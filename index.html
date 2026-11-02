@@ -229,6 +229,8 @@ function review({a,b,W}){
   });
   return out.join('\n');
 }
+// a session edited or deleted in Week must not stay in the Timer's pending note prompt, or Save would overwrite it
+const unask=s=>{if(P.ask===s.id){P.ask=null;save('pomo',P)}};
 function wdraw(){
   const w=weekOf();
   $('wl').textContent=D(w.a)+' to '+D(new Date(w.b-1));
@@ -240,10 +242,10 @@ function wdraw(){
   $('ws').replaceChildren(...[...w.W].reverse().map(s=>{
     const li=document.createElement('li'),t=document.createElement('span'),g=document.createElement('button'),x=document.createElement('button');
     t.textContent=new Date(s.end).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+(s.note||s.name||'(no note)');
-    t.onclick=()=>{const v=prompt('What got done?',s.note);if(v!==null){s.note=v.trim();save('sessions',SS);wdraw()}};
+    t.onclick=()=>{const v=prompt('What got done?',s.note);if(v!==null){s.note=v.trim();unask(s);save('sessions',SS);wdraw();draw()}};
     g.className='chip';g.textContent=s.tag||'+ client';
     g.onclick=()=>{const v=prompt('Client / project',s.tag);if(v!==null){s.tag=v.trim();retag(s.tag);save('sessions',SS);tdraw();wdraw()}};
-    x.textContent='×';x.onclick=()=>{if(confirm('Delete this session?')){SS.splice(SS.indexOf(s),1);save('sessions',SS);wdraw();draw()}};
+    x.textContent='×';x.onclick=()=>{if(confirm('Delete this session?')){SS.splice(SS.indexOf(s),1);unask(s);save('sessions',SS);wdraw();draw()}};
     li.append(t,g,x);return li;
   }));
 }
