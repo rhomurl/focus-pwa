@@ -129,6 +129,15 @@ function finish(){
   next(was==='focus'&&todayCount()%4===0);
   save('pomo',P);
 }
+// keep the screen on during a running focus phase. The browser drops the lock when the page is hidden, draw() re-takes it
+let WL,WLp;
+function wake(){
+  const want=P.end&&P.phase==='focus'&&!document.hidden;
+  if(want&&!WL&&!WLp&&navigator.wakeLock){
+    WLp=1;
+    navigator.wakeLock.request('screen').then(l=>{WL=l;l.onrelease=()=>WL=null}).catch(()=>{}).finally(()=>WLp=0);
+  }else if(!want&&WL)WL.release();
+}
 function draw(){
   const ms=P.end?Math.max(0,P.end-Date.now()):P.left,s=Math.ceil(ms/1000);
   if(P.end&&ms===0){finish();return draw()}
@@ -141,6 +150,7 @@ function draw(){
   $('go').textContent=P.end?'Pause':'Start';
   document.title=P.end?$('time').textContent:'Focus';
   if($('ask').hidden===!!P.ask){$('ask').hidden=!P.ask;$('ai').value=''}
+  wake();
 }
 $('go').onclick=()=>{
   if(P.end){P.left=Math.max(0,P.end-Date.now());P.end=null}
