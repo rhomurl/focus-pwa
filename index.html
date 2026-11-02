@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Focus">
+<meta name="theme-color" content="#1a1a1e">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Focus</title>
+<style>
+:root{--bg:#1a1a1e;--card:#26262c;--fg:#f2f2f4;--dim:#8e8e98;--acc:#e84a3c}
+@media(prefers-color-scheme:light){:root{--bg:#f4f4f6;--card:#fff;--fg:#1a1a1e;--dim:#6c6c76}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px -apple-system,system-ui,sans-serif;min-height:100dvh;
+ padding:env(safe-area-inset-top) 16px calc(70px + env(safe-area-inset-bottom))}
+section{display:none;padding-top:24px}section.on{display:block}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:14px 0;background:none;border:0;color:var(--dim);font-size:13px}
+nav button.on{color:var(--acc);font-weight:600}
+.time{font-size:84px;font-weight:200;text-align:center;font-variant-numeric:tabular-nums;margin:40px 0 8px}
+.phase{text-align:center;color:var(--dim);text-transform:uppercase;letter-spacing:2px;font-size:13px}
+.row{display:flex;gap:12px;justify-content:center;margin:24px 0}
+.btn{background:var(--card);color:var(--fg);border:0;border-radius:14px;padding:14px 26px;font-size:17px}
+.btn.p{background:var(--acc);color:#fff;font-weight:600}
+textarea,input[type=text]{width:100%;background:var(--card);color:var(--fg);border:0;border-radius:12px;padding:12px;font:inherit}
+textarea{height:60vh;resize:none}
+li{list-style:none;display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);border-radius:12px;margin-top:8px}
+li.d span{text-decoration:line-through;color:var(--dim)}li span{flex:1}
+li button{background:none;border:0;color:var(--dim);font-size:20px}
+ul{padding:0;margin:0}
+</style>
+</head>
+<body>
+<section id="timer" class="on">
+  <div class="phase" id="phase"></div>
+  <div class="time" id="time"></div>
+  <div class="phase" id="count"></div>
+  <div class="row"><button class="btn p" id="go">Start</button><button class="btn" id="skip">Skip</button><button class="btn" id="reset">Reset</button></div>
+</section>
+<section id="stopwatch">
+  <div class="time" id="swt">0:00.0</div>
+  <div class="row"><button class="btn p" id="swgo">Start</button><button class="btn" id="swreset">Reset</button></div>
+</section>
+<section id="tasks">
+  <form id="tf" style="display:flex;gap:8px"><input type="text" id="ti" placeholder="Add a task" autocomplete="off"><button class="btn p">+</button></form>
+  <ul id="tl"></ul>
+</section>
+<section id="notes"><textarea id="nt" placeholder="Scratchpad…"></textarea></section>
+<nav><button data-t="timer" class="on">Timer</button><button data-t="stopwatch">Stopwatch</button><button data-t="tasks">Tasks</button><button data-t="notes">Notes</button></nav>
+<script>
+const $=id=>document.getElementById(id);
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
+const save=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
+const pad=n=>String(n).padStart(2,'0');
+
+// tabs
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button,section').forEach(e=>e.classList.remove('on'));
+  b.classList.add('on');$(b.dataset.t).classList.add('on');
+});
+
+// pomodoro: stores an end timestamp so it stays correct when the app is backgrounded
+const LEN={focus:25,short:5,long:15},NAME={focus:'Focus',short:'Short break',long:'Long break'};
+let P=load('pomo',{phase:'focus',left:LEN.focus*60000,end:null,done:0});
+const beep=()=>{try{const a=new AudioContext(),o=a.createOscillator();o.connect(a.destination);o.frequency.value=880;o.start();o.stop(a.currentTime+.6)}catch{}};
+function next(){
+  if(P.phase==='focus'){P.done++;P.phase=P.done%4?'short':'long'}else P.phase='focus';
+  P.left=LEN[P.phase]*60000;P.end=null;
+}
+function draw(){
+  const ms=P.end?Math.max(0,P.end-Date.now()):P.left,s=Math.ceil(ms/1000);
+  $('time').textContent=pad(Math.floor(s/60))+':'+pad(s%60);
+  $('phase').textContent=NAME[P.phase];
+  $('count').textContent=P.done+' focus sessions done';
+  $('go').textContent=P.end?'Pause':'Start';
+  document.title=P.end?$('time').textContent:'Focus';
+  if(P.end&&ms===0){beep();next();save('pomo',P);draw()}
+}
+$('go').onclick=()=>{
+  if(P.end){P.left=P.end-Date.now();P.end=null}else{P.end=Date.now()+P.left;try{new AudioContext().resume()}catch{}}
+  save('pomo',P);draw();
+};
+$('skip').onclick=()=>{next();save('pomo',P);draw()};
+$('reset').onclick=()=>{P.left=LEN[P.phase]*60000;P.end=null;save('pomo',P);draw()};
+
+// stopwatch
+let S=load('sw',{start:null,acc:0});
+function swdraw(){
+  const t=S.acc+(S.start?Date.now()-S.start:0),m=Math.floor(t/60000);
+  $('swt').textContent=m+':'+pad(Math.floor(t/1000)%60)+'.'+Math.floor(t/100)%10;
+  $('swgo').textContent=S.start?'Stop':'Start';
+}
+$('swgo').onclick=()=>{S.start?(S.acc+=Date.now()-S.start,S.start=null):S.start=Date.now();save('sw',S);swdraw()};
+$('swreset').onclick=()=>{S={start:null,acc:0};save('sw',S);swdraw()};
+
+// tasks
+let T=load('tasks',[]);
+function tdraw(){
+  $('tl').innerHTML='';
+  T.forEach((t,i)=>{
+    const li=document.createElement('li');li.className=t.d?'d':'';
+    const c=document.createElement('input');c.type='checkbox';c.checked=t.d;c.onchange=()=>{t.d=c.checked;save('tasks',T);tdraw()};
+    const s=document.createElement('span');s.textContent=t.x;
+    const x=document.createElement('button');x.textContent='×';x.onclick=()=>{T.splice(i,1);save('tasks',T);tdraw()};
+    li.append(c,s,x);$('tl').append(li);
+  });
+}
+$('tf').onsubmit=e=>{e.preventDefault();const x=$('ti').value.trim();if(x){T.push({x,d:false});$('ti').value='';save('tasks',T);tdraw()}};
+
+// notes
+$('nt').value=load('notes','');
+$('nt').oninput=()=>save('notes',$('nt').value);
+
+draw();swdraw();tdraw();
+setInterval(()=>{draw();swdraw()},200);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
