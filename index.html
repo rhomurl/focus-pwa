@@ -26,15 +26,16 @@ nav button.on{color:var(--acc);font-weight:600}
 .row{display:flex;gap:12px;justify-content:center;margin:24px 0}
 .btn{background:var(--card);color:var(--fg);border:0;border-radius:14px;padding:14px 26px;font-size:17px}
 .btn.p{background:var(--acc);color:#fff;font-weight:600}
-.btn.s{padding:10px 16px;font-size:15px}
+.btn.s{padding:10px 16px;font-size:15px;min-height:44px}
 textarea,input[type=text]{width:100%;background:var(--card);color:var(--fg);border:0;border-radius:12px;padding:12px;font:inherit}
 textarea{height:60vh;resize:none}
 li{list-style:none;display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);border-radius:12px;margin-top:8px}
 li.d span{text-decoration:line-through;color:var(--dim)}li span{flex:1;cursor:pointer}
 li.f{outline:2px solid var(--acc)}
-li button{background:none;border:0;color:var(--dim);font-size:20px}
+li button{background:none;border:0;color:var(--dim);font-size:20px;min-width:40px;min-height:40px}
+li input[type=checkbox]{width:26px;height:26px;margin:0;flex:none}
 li b{font-weight:500}
-li button.chip{background:var(--bg);border-radius:8px;padding:4px 8px;font-size:12px}
+li button.chip{background:var(--bg);border-radius:8px;padding:4px 10px;font-size:13px;min-width:0}
 ul{padding:0;margin:0}
 .now{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--dim);margin-top:12px;min-height:32px;text-align:center}
 .now button{background:none;border:0;color:var(--dim);font-size:20px}
@@ -70,6 +71,8 @@ ul{padding:0;margin:0}
   <textarea id="rv" placeholder="Weekly review"></textarea>
   <div class="row" style="margin:12px 0"><button class="btn s p" id="cp">Copy review</button><button class="btn s" id="ex">Export backup</button><button class="btn s" id="imb">Import</button></div>
   <input type="file" id="im" accept=".json,application/json" hidden>
+  <div class="phase" style="margin-top:20px">Sessions (tap text to edit note)</div>
+  <ul id="ws"></ul>
 </section>
 <section id="notes"><textarea id="nt" placeholder="Scratchpad…"></textarea></section>
 <nav><button data-t="timer" class="on">Timer</button><button data-t="stopwatch">Stopwatch</button><button data-t="tasks">Tasks</button><button data-t="week">Week</button><button data-t="notes">Notes</button></nav>
@@ -149,7 +152,9 @@ $('go').onclick=()=>{
 };
 // skipping a focus phase does not count as a completed session
 $('skip').onclick=()=>{next(false);save('pomo',P);draw()};
-$('reset').onclick=()=>{P.left=LEN[P.phase]*60000;P.end=null;save('pomo',P);draw()};
+$('reset').onclick=()=>{
+  if(P.phase==='focus'&&(P.end||P.left<LEN.focus*60000)&&!confirm('Discard this focus session?'))return;
+  P.left=LEN[P.phase]*60000;P.end=null;save('pomo',P);draw()};
 $('nowx').onclick=()=>{P.task=null;save('pomo',P);tdraw();draw()};
 $('af').onsubmit=e=>{
   e.preventDefault();
@@ -169,6 +174,14 @@ function swdraw(){
 $('swgo').onclick=()=>{S.start?(S.acc+=Date.now()-S.start,S.start=null):S.start=Date.now();save('sw',S);swdraw()};
 $('swreset').onclick=()=>{S={start:null,acc:0};save('sw',S);swdraw()};
 
+// tags: matched case-insensitively. New tasks reuse the existing casing; editing a chip sets its casing everywhere
+const canon=g=>{g=g.trim();const k=g.toLowerCase();return [...T.map(t=>t.g),...SS.map(s=>s.tag)].find(x=>x.toLowerCase()===k)||g};
+const retag=v=>{
+  const k=v.toLowerCase();if(!k)return;
+  T.forEach(t=>{if(t.g.toLowerCase()===k)t.g=v});SS.forEach(s=>{if(s.tag.toLowerCase()===k)s.tag=v});
+  save('tasks',T);save('sessions',SS);
+};
+
 // tasks
 const unfocus=id=>{if(P.task===id){P.task=null;save('pomo',P)}};
 function tdraw(){
@@ -180,12 +193,12 @@ function tdraw(){
     const s=document.createElement('span');s.textContent=t.x;
     s.onclick=()=>{P.task=P.task===t.id?null:t.id;save('pomo',P);tdraw();draw()};
     const g=document.createElement('button');g.className='chip';g.textContent=t.g||'+ client';
-    g.onclick=()=>{const v=prompt('Client / project',t.g);if(v!==null){t.g=v.trim();save('tasks',T);tdraw();draw()}};
+    g.onclick=()=>{const v=prompt('Client / project',t.g);if(v!==null){t.g=v.trim();retag(t.g);save('tasks',T);tdraw();draw()}};
     const x=document.createElement('button');x.textContent='×';x.onclick=()=>{unfocus(t.id);T.splice(i,1);save('tasks',T);tdraw();draw()};
     li.append(c,s,g,x);$('tl').append(li);
   });
 }
-$('tf').onsubmit=e=>{e.preventDefault();const x=$('ti').value.trim();if(x){T.push(normT({x,g:$('tg').value}));$('ti').value='';save('tasks',T);tdraw()}};
+$('tf').onsubmit=e=>{e.preventDefault();const x=$('ti').value.trim();if(x){T.push(normT({x,g:canon($('tg').value)}));$('ti').value='';save('tasks',T);tdraw()}};
 
 // week: breakdown per client + exportable review. Weeks start Monday, local time
 let wk=0;
@@ -216,6 +229,8 @@ function review({a,b,W}){
   });
   return out.join('\n');
 }
+// a session edited or deleted in Week must not stay in the Timer's pending note prompt, or Save would overwrite it
+const unask=s=>{if(P.ask===s.id){P.ask=null;save('pomo',P)}};
 function wdraw(){
   const w=weekOf();
   $('wl').textContent=D(w.a)+' to '+D(new Date(w.b-1));
@@ -224,6 +239,15 @@ function wdraw(){
     s.textContent=v.n;m.textContent=fmt(v.m);li.append(s,m);return li;
   }));
   $('rv').value=review(w);
+  $('ws').replaceChildren(...[...w.W].reverse().map(s=>{
+    const li=document.createElement('li'),t=document.createElement('span'),g=document.createElement('button'),x=document.createElement('button');
+    t.textContent=new Date(s.end).toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'})+' · '+(s.note||s.name||'(no note)');
+    t.onclick=()=>{const v=prompt('What got done?',s.note);if(v!==null){s.note=v.trim();unask(s);save('sessions',SS);wdraw();draw()}};
+    g.className='chip';g.textContent=s.tag||'+ client';
+    g.onclick=()=>{const v=prompt('Client / project',s.tag);if(v!==null){s.tag=v.trim();retag(s.tag);save('sessions',SS);tdraw();wdraw()}};
+    x.textContent='×';x.onclick=()=>{if(confirm('Delete this session?')){SS.splice(SS.indexOf(s),1);unask(s);save('sessions',SS);wdraw();draw()}};
+    li.append(t,g,x);return li;
+  }));
 }
 $('wp').onclick=()=>{wk--;wdraw()};
 $('wn').onclick=()=>{if(wk<0){wk++;wdraw()}};
